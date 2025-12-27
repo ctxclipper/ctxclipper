@@ -492,9 +492,14 @@ def print_chunk_file_tokens(entries: List[Tuple[str, str]], enc, model: Optional
     if not entries:
         print("[INFO]   (no files)", file=sys.stderr)
         return
-    for rel_path, rendered in entries:
+    rows: List[Tuple[int, int, str, Optional[str]]] = []
+    for idx, (rel_path, rendered) in enumerate(entries):
         tok, note = count_tokens_with_enc(rendered, enc, model, encoding_name)
-        tok_str = f"{tok}" if tok is not None else f"unavailable ({note})"
+        tok_val = tok if tok is not None else -1
+        rows.append((tok_val, idx, rel_path, note))
+    rows.sort(key=lambda r: (r[0], r[1]))
+    for tok_val, _, rel_path, note in rows:
+        tok_str = f"{tok_val}" if tok_val >= 0 else f"unavailable ({note})"
         print(f"[INFO]   {rel_path}: {tok_str}", file=sys.stderr)
 
 
