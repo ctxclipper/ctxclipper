@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Clipboard-first, gitignore-first directory flattener for LLM context."""
 import os
 import re
 import sys
@@ -8,6 +9,8 @@ import argparse
 import fnmatch
 from typing import List, Optional, Tuple, Set
 from dataclasses import dataclass
+
+__version__ = "0.1.0"
 
 # Optional imports are loaded lazily where needed
 
@@ -510,6 +513,7 @@ def print_chunk_file_tokens(entries: List[Tuple[str, str]], enc, model: Optional
 def main():
     parser = argparse.ArgumentParser(description="Clipboard-first, gitignore-first directory flattener for LLM context.")
     parser.add_argument("path", nargs="?", default=".", help="Directory to process (default: .)")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     def _question_file(arg: str):
         return ("file", arg)
