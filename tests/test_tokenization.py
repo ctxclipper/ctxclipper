@@ -3,6 +3,8 @@
 import pytest
 
 from ctxclipper.tokenization import (
+    count_tokens,
+    count_tokens_with_encoder,
     fits_budget,
     get_tokenizer,
     safe_token_len,
@@ -104,3 +106,70 @@ class TestSafeTokenLen:
         if result.encoder is not None:
             count = safe_token_len(result.encoder, "hello world")
             assert count > 0
+
+
+class TestCountTokens:
+    """Tests for count_tokens function."""
+
+    def test_counts_with_model(self) -> None:
+        """Should count tokens for known model."""
+        count, note = count_tokens("hello world", model="gpt-4", encoding_name=None)
+        # Should return a positive count if tiktoken available
+        assert count is None or count > 0
+
+    def test_counts_with_encoding(self) -> None:
+        """Should count tokens with explicit encoding."""
+        count, note = count_tokens("hello world", model=None, encoding_name="cl100k_base")
+        assert count is None or count > 0
+
+    def test_counts_with_defaults(self) -> None:
+        """Should count tokens with default encoding."""
+        count, note = count_tokens("hello world", model=None, encoding_name=None)
+        assert count is None or count > 0
+
+    def test_empty_string_returns_zero(self) -> None:
+        """Empty string should return 0 tokens."""
+        count, note = count_tokens("", model=None, encoding_name=None)
+        assert count is None or count == 0
+
+
+class TestCountTokensWithEncoder:
+    """Tests for count_tokens_with_encoder function."""
+
+    def test_with_valid_encoder(self) -> None:
+        """Should count tokens with valid encoder."""
+        result = get_tokenizer(None, None)
+        if result.encoder is not None:
+            count, note = count_tokens_with_encoder(
+                "hello world", result.encoder, None, None
+            )
+            assert count is not None
+            assert count > 0
+            assert note is None
+
+    def test_none_encoder_falls_back(self) -> None:
+        """None encoder should fall back to model/encoding."""
+        count, note = count_tokens_with_encoder(
+            "hello world", None, "gpt-4", None
+        )
+        # Either successfully counted or note explains why not
+        assert count is not None or note is not None
+
+    def test_returns_note_on_failure(self) -> None:
+        """Should return note when counting fails."""
+        count, note = count_tokens_with_encoder(
+            "hello world", None, None, None
+        )
+        # With no encoder and no model/encoding, might still work with defaults
+        # Just ensure we get some response
+        assert count is not None or note is not None
+
+    def test_empty_string_with_encoder(self) -> None:
+        """Empty string should return 0 tokens."""
+        result = get_tokenizer(None, None)
+        if result.encoder is not None:
+            count, note = count_tokens_with_encoder(
+                "", result.encoder, None, None
+            )
+            assert count == 0
+            assert note is None

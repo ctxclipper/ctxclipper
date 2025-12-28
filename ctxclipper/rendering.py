@@ -1,7 +1,7 @@
 """Output rendering: XML and legacy text formats."""
 
 import os
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from .types import FileBlock
 
@@ -124,19 +124,18 @@ def read_text_file(path: str) -> str:
         File contents as string.
 
     Raises:
-        SystemExit: If file cannot be read.
+        FileReadError: If file cannot be read.
     """
-    import sys
+    from .exceptions import FileReadError
 
     try:
         with open(os.path.expanduser(path), "rb") as f:
             return f.read().decode("utf-8", errors="replace")
-    except Exception as e:
-        print(f"[ERROR] Failed to read file: {path} ({e})", file=sys.stderr)
-        sys.exit(1)
+    except OSError as e:
+        raise FileReadError(path, str(e)) from e
 
 
-def join_texts(parts: List[Optional[str]]) -> str:
+def join_texts(parts: Sequence[Optional[str]]) -> str:
     """
     Join text parts with double newlines, stripping trailing newlines.
 

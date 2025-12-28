@@ -1,13 +1,15 @@
 """Core orchestration logic for ctxclipper."""
 
+import argparse
 import logging
 import os
 import sys
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, cast
 
 from .chunking import pack_chunks, print_chunk_file_tokens, trim_largest_first
 from .clipboard import copy_to_clipboard
 from .discovery import discover_files, is_binary
+from .exceptions import ClipboardError, DirectoryError
 from .rendering import (
     join_texts,
     read_text_file,
@@ -72,7 +74,8 @@ def read_file_blocks(
 
             content = raw.decode("utf-8", errors="replace") + suffix
             blocks.append(FileBlock(rel_path=rel, raw=content))
-        except Exception:
+        except OSError as e:
+            logger.warning("Failed to read file %s: %s", abs_path, e)
             skipped_errors += 1
 
     return blocks, skipped_binary, skipped_errors, truncated_files
@@ -105,7 +108,7 @@ def adjust_budget(
     return base - overhead, True
 
 
-def run(args) -> int:
+def run(args: argparse.Namespace) -> int:
     """
     Main execution logic for ctxclipper.
 
@@ -114,11 +117,15 @@ def run(args) -> int:
 
     Returns:
         Exit code (0 for success, non-zero for errors).
+
+    Raises:
+        DirectoryError: If target path is not a directory.
+        ClipboardError: If clipboard operations fail.
+        FileReadError: If preamble/question files cannot be read.
     """
     base_path = os.path.abspath(args.path)
     if not os.path.isdir(base_path):
-        logger.error("Not a directory: %s", base_path)
-        return 1
+        raise DirectoryError(base_path, "Not a directory")
 
     # Read preamble and question content
     preamble_parts = [read_text_file(p) for p in args.preamble]
@@ -263,7 +270,7 @@ def run(args) -> int:
 
 
 def _handle_split_mode(
-    args,
+    args: argparse.Namespace,
     blocks: List[FileBlock],
     preamble_rendered: str,
     question_rendered: str,
@@ -273,14 +280,21 @@ def _handle_split_mode(
     adj_max_chars_budget: Optional[int],
     adj_max_tokens_budget: Optional[int],
 ) -> Tuple[int, Optional[int], Optional[str], str]:
-    """Handle chunked output mode."""
-    chunk_pairs: List[ChunkWithEntries] = pack_chunks(
-        blocks,
-        args.format,
-        max_chars=adj_max_chars_budget,
-        max_tokens=adj_max_tokens_budget,
-        enc=enc,
-        include_entries=True,
+    """Handle chunked output mode.
+
+    Raises:
+        ClipboardError: If clipboard copy fails.
+    """
+    chunk_pairs: List[ChunkWithEntries] = cast(
+        List[ChunkWithEntries],
+        pack_chunks(
+            blocks,
+            args.format,
+            max_chars=adj_max_chars_budget,
+            max_tokens=adj_max_tokens_budget,
+            enc=enc,
+            include_entries=True,
+        ),
     )
 
     if not chunk_pairs:
@@ -347,7 +361,7 @@ def _handle_split_mode(
         chunk = wrapped_chunks[global_idx - 1]
         if not args.no_copy:
             if not copy_to_clipboard(chunk):
-                sys.exit(2)
+                raise ClipboardError("Failed to copy chunk to clipboard")
             tok, note = count_tokens_with_encoder(chunk, enc, args.model, args.encoding)
             tok_str = f"{tok} tokens" if tok is not None else f"tokens unavailable ({note})"
             print(
@@ -399,7 +413,7 @@ def _handle_split_mode(
 
 
 def _handle_single_mode(
-    args,
+    args: argparse.Namespace,
     blocks: List[FileBlock],
     preamble_rendered: str,
     question_rendered: str,
@@ -408,7 +422,11 @@ def _handle_single_mode(
     max_tokens_budget: Optional[int],
     full_rendered: str,
 ) -> Tuple[int, Optional[int], Optional[str]]:
-    """Handle single-chunk output mode."""
+    """Handle single-chunk output mode.
+
+    Raises:
+        ClipboardError: If clipboard copy fails.
+    """
     working_blocks = blocks
 
     # Optional trimming when split is off or not needed
@@ -435,7 +453,7 @@ def _handle_single_mode(
 
     if not args.no_copy:
         if not copy_to_clipboard(final_text):
-            sys.exit(2)
+            raise ClipboardError("Failed to copy to clipboard")
 
     entries = [(b.rel_path, render_block(b, args.format)) for b in working_blocks]
     print_chunk_file_tokens(entries, enc, args.model, args.encoding, "Chunk 1/1")

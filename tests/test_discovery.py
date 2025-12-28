@@ -6,8 +6,11 @@ from pathlib import Path
 import pytest
 
 from ctxclipper.discovery import (
+    discover_files,
+    git_list_files,
     in_git_worktree,
     is_binary,
+    load_gitignore_pathspec,
     normalize_glob,
     should_ignore_path,
 )
@@ -161,3 +164,164 @@ class TestInGitWorktree:
     def test_nonexistent_dir(self) -> None:
         """Non-existent directories should return False."""
         assert in_git_worktree("/nonexistent/path") is False
+
+
+class TestGitListFiles:
+    """Tests for git_list_files function."""
+
+    def test_lists_tracked_files(self, git_repo: Path) -> None:
+        """Should list tracked files."""
+        files = git_list_files(str(git_repo))
+
+        assert "file1.py" in files
+        assert "file2.py" in files
+        assert ".gitignore" in files
+
+    def test_excludes_ignored_files(self, git_repo: Path) -> None:
+        """Should exclude files in .gitignore."""
+        files = git_list_files(str(git_repo))
+
+        assert "ignored.txt" not in files
+
+    def test_includes_untracked_files(self, git_repo: Path) -> None:
+        """Should include untracked but not ignored files."""
+        # Add an untracked file
+        untracked = git_repo / "untracked.py"
+        untracked.write_text("# untracked")
+
+        files = git_list_files(str(git_repo))
+        assert "untracked.py" in files
+
+
+class TestLoadGitignorePathspec:
+    """Tests for load_gitignore_pathspec function."""
+
+    def test_loads_gitignore(self, temp_dir: Path) -> None:
+        """Should load patterns from .gitignore."""
+        gitignore = temp_dir / ".gitignore"
+        gitignore.write_text("*.pyc\n__pycache__\n")
+
+        spec, error = load_gitignore_pathspec(str(temp_dir))
+
+        assert error is None
+        assert spec is not None
+        assert spec.match_file("test.pyc")
+        assert spec.match_file("__pycache__")
+
+    def test_no_gitignore(self, temp_dir: Path) -> None:
+        """Should return empty spec when no .gitignore exists."""
+        spec, error = load_gitignore_pathspec(str(temp_dir))
+
+        assert error is None
+        assert spec is not None
+        # Empty spec shouldn't match anything
+        assert not spec.match_file("anything.txt")
+
+
+class TestDiscoverFiles:
+    """Tests for discover_files function."""
+
+    def test_discovers_all_files(self, sample_repo: Path) -> None:
+        """Should discover all non-ignored files."""
+        files, used_git = discover_files(
+            str(sample_repo),
+            ignore_names=set(),
+            ignore_globs=[],
+            include_dotfiles=True,
+        )
+
+        # Should find the sample files
+        file_names = [os.path.basename(f) for f in files]
+        assert "README.md" in file_names
+        assert "main.py" in file_names
+
+    def test_respects_ignore_names(self, sample_repo: Path) -> None:
+        """Should respect ignore names."""
+        files, _ = discover_files(
+            str(sample_repo),
+            ignore_names={"src"},
+            ignore_globs=[],
+            include_dotfiles=True,
+        )
+
+        # Should not find files in src directory
+        for f in files:
+            assert "src" not in f
+
+    def test_respects_ignore_globs(self, sample_repo: Path) -> None:
+        """Should respect ignore globs."""
+        files, _ = discover_files(
+            str(sample_repo),
+            ignore_names=set(),
+            ignore_globs=["*.md"],
+            include_dotfiles=True,
+        )
+
+        # Should not find .md files
+        for f in files:
+            assert not f.endswith(".md")
+
+    def test_excludes_dotfiles_by_default(self, sample_repo: Path) -> None:
+        """Should exclude dotfiles when include_dotfiles is False."""
+        files, _ = discover_files(
+            str(sample_repo),
+            ignore_names=set(),
+            ignore_globs=[],
+            include_dotfiles=False,
+        )
+
+        # Should not find .gitignore
+        for f in files:
+            assert not os.path.basename(f).startswith(".")
+
+    def test_git_repo_uses_git(self, git_repo: Path) -> None:
+        """Should use git when in git repo."""
+        files, used_git = discover_files(
+            str(git_repo),
+            ignore_names=set(),
+            ignore_globs=[],
+            include_dotfiles=True,
+        )
+
+        assert used_git is True
+
+    def test_non_git_uses_scan(self, temp_dir: Path) -> None:
+        """Should use directory scan when not in git repo."""
+        # Create a file
+        (temp_dir / "test.py").write_text("# test")
+
+        files, used_git = discover_files(
+            str(temp_dir),
+            ignore_names=set(),
+            ignore_globs=[],
+            include_dotfiles=True,
+        )
+
+        assert used_git is False
+        assert "test.py" in files
+
+    def test_empty_directory(self, temp_dir: Path) -> None:
+        """Should handle empty directory."""
+        files, _ = discover_files(
+            str(temp_dir),
+            ignore_names=set(),
+            ignore_globs=[],
+            include_dotfiles=True,
+        )
+
+        assert files == []
+
+    def test_files_sorted(self, temp_dir: Path) -> None:
+        """Should return sorted file list."""
+        (temp_dir / "z.py").write_text("")
+        (temp_dir / "a.py").write_text("")
+        (temp_dir / "m.py").write_text("")
+
+        files, _ = discover_files(
+            str(temp_dir),
+            ignore_names=set(),
+            ignore_globs=[],
+            include_dotfiles=True,
+        )
+
+        assert files == sorted(files)

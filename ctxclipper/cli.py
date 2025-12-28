@@ -1,7 +1,7 @@
 """Command-line interface argument parsing."""
 
 import argparse
-from typing import Tuple
+from typing import List, Optional, Tuple
 
 from .constants import (
     DEFAULT_IGNORE_NAMES,
@@ -223,7 +223,14 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_args(args=None) -> argparse.Namespace:
-    """Parse command-line arguments."""
+def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
+    """Parse command-line arguments.
+
+    Args:
+        args: Command-line arguments (defaults to sys.argv).
+
+    Returns:
+        Parsed argument namespace.
+    """
     parser = create_parser()
     return parser.parse_args(args)

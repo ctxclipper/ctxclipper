@@ -6,18 +6,51 @@ formats output in XML or legacy text format, and manages token/character limits
 for LLM context windows.
 """
 
+import logging
+
 from .cli import parse_args
 from .core import run
+from .exceptions import (
+    ClipboardError,
+    CtxclipperError,
+    DirectoryError,
+    FileReadError,
+)
 from .types import FileBlock
 
 __version__ = "0.1.0"
-__all__ = ["__version__", "main", "run", "parse_args", "FileBlock"]
+__all__ = [
+    "__version__",
+    "main",
+    "run",
+    "parse_args",
+    "FileBlock",
+    "CtxclipperError",
+    "FileReadError",
+    "ClipboardError",
+    "DirectoryError",
+]
+
+# Configure null handler for library use
+logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 
 def main() -> None:
     """Main entry point for the CLI."""
     import sys
 
-    args = parse_args()
-    exit_code = run(args)
-    sys.exit(exit_code)
+    from .exceptions import ClipboardError, CtxclipperError, DirectoryError
+
+    try:
+        args = parse_args()
+        exit_code = run(args)
+        sys.exit(exit_code)
+    except ClipboardError as e:
+        print(f"[ERROR] {e}", file=sys.stderr)
+        sys.exit(2)
+    except DirectoryError as e:
+        print(f"[ERROR] {e}", file=sys.stderr)
+        sys.exit(1)
+    except CtxclipperError as e:
+        print(f"[ERROR] {e}", file=sys.stderr)
+        sys.exit(1)

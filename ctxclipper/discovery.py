@@ -4,7 +4,7 @@ import fnmatch
 import logging
 import os
 import subprocess
-from typing import List, Optional, Set, Tuple
+from typing import Any, List, Optional, Set, Tuple
 
 from .constants import BINARY_DETECTION_BYTES
 
@@ -74,7 +74,7 @@ def git_list_files(base_path: str) -> List[str]:
     return [p.decode("utf-8", "replace") for p in out.split(b"\0") if p]
 
 
-def load_gitignore_pathspec(base_path: str) -> Tuple[Optional[object], Optional[str]]:
+def load_gitignore_pathspec(base_path: str) -> Tuple[Optional[Any], Optional[str]]:
     """
     Load .gitignore patterns for non-git mode using pathspec library.
 
@@ -208,7 +208,7 @@ def discover_files(
         try:
             rel_paths = git_list_files(base_path)
             used_git = True
-        except Exception as e:
+        except subprocess.CalledProcessError as e:
             logger.warning("git listing failed, falling back to scan: %s", e)
 
     if not used_git:

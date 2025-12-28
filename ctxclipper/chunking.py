@@ -1,5 +1,6 @@
 """Chunking and budget management for output splitting."""
 
+import heapq
 import logging
 from typing import List, Optional, Tuple, Union
 
@@ -61,16 +62,24 @@ def split_big_file(
         if max_chars is not None and max_chars > 0:
             return [tiny_rendered[:max_chars]]
 
-        # Fallback: try to find smallest prefix that fits token budget
+        # Fallback: binary search for largest prefix that fits token budget
         if enc is not None and max_tokens is not None and max_tokens > 0:
-            for cut in range(len(tiny_rendered), 0, -1):
+            lo, hi = 0, len(tiny_rendered)
+            best = 0
+            while lo <= hi:
+                mid = (lo + hi) // 2
                 if fits_budget(
-                    wrap_files_root(tiny_rendered[:cut], fmt),
+                    wrap_files_root(tiny_rendered[:mid], fmt),
                     max_chars=max_chars,
                     max_tokens=max_tokens,
                     enc=enc,
                 ):
-                    return [tiny_rendered[:cut]]
+                    best = mid
+                    lo = mid + 1
+                else:
+                    hi = mid - 1
+            if best > 0:
+                return [tiny_rendered[:best]]
         return [tiny_rendered]
 
     pieces: List[str] = []
@@ -214,7 +223,7 @@ def trim_largest_first(
     """
     Trim content to fit within max_chars by truncating largest files first.
 
-    Uses greedy approach: repeatedly truncate the largest file until total fits.
+    Uses a heap-based approach for O(n log n) complexity instead of O(n²).
 
     Args:
         blocks: List of FileBlocks to trim (modified in place).
@@ -224,34 +233,42 @@ def trim_largest_first(
     Returns:
         Tuple of (trimmed blocks, final total length).
     """
-
-    def total_len(bs: List[FileBlock]) -> int:
-        return sum(len(b.raw) for b in bs)
-
-    total = total_len(blocks)
+    total = sum(len(b.raw) for b in blocks)
     if total <= max_chars:
         return blocks, total
 
-    while total > max_chars and blocks:
-        # Find largest block
-        i = max(range(len(blocks)), key=lambda k: len(blocks[k].raw))
-        b = blocks[i]
-        content = b.raw
+    # Build max-heap using negative lengths (heapq is min-heap)
+    # Format: (-length, index) to get largest first
+    heap: List[Tuple[int, int]] = [(-len(b.raw), i) for i, b in enumerate(blocks)]
+    heapq.heapify(heap)
 
-        if len(content) > keep_per_file:
-            new_content = (
-                content[:keep_per_file] + "\n\n[TRUNCATED: exceeded max-chars budget]\n"
-            )
+    while total > max_chars and heap:
+        neg_len, i = heapq.heappop(heap)
+        current_len = -neg_len
+        b = blocks[i]
+
+        # Skip if block was already processed (length changed)
+        if len(b.raw) != current_len:
+            continue
+
+        content = b.raw
+        truncation_marker = "\n\n[TRUNCATED: exceeded max-chars budget]\n"
+        potential_len = keep_per_file + len(truncation_marker)
+
+        # Only truncate if it would actually reduce size
+        if len(content) > keep_per_file and potential_len < len(content):
+            new_content = content[:keep_per_file] + truncation_marker
             blocks[i] = FileBlock(rel_path=b.rel_path, raw=new_content)
+            total = total - current_len + len(new_content)
+            # Push updated block back to heap
+            heapq.heappush(heap, (-len(new_content), i))
         else:
             # Can't meaningfully trim further; drop the file content
-            blocks[i] = FileBlock(
-                rel_path=b.rel_path, raw="[OMITTED: exceeded max-chars budget]\n"
-            )
+            omit_msg = "[OMITTED: exceeded max-chars budget]\n"
+            blocks[i] = FileBlock(rel_path=b.rel_path, raw=omit_msg)
+            total = total - current_len + len(omit_msg)
 
-        total = total_len(blocks)
-
-        # Avoid infinite loop if headers dominate
+        # Avoid infinite loop if all blocks are minimal
         if total > max_chars and all(len(block.raw) <= 64 for block in blocks):
             break
 

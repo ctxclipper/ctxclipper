@@ -79,10 +79,10 @@ def get_tokenizer(
     # Fall back to explicit encoding
     try:
         enc = tiktoken.get_encoding(encoding_name or DEFAULT_ENCODING)
-        note = None
+        fallback_note: Optional[str] = None
         if model_norm:
-            note = f"Unknown model '{model_raw}', used encoding '{enc.name}'"
-        return TokenizerResult(encoder=enc, note=note, source="encoding")
+            fallback_note = f"Unknown model '{model_raw}', used encoding '{enc.name}'"
+        return TokenizerResult(encoder=enc, note=fallback_note, source="encoding")
     except Exception as e:
         return TokenizerResult(
             encoder=None,
