@@ -1,5 +1,6 @@
 include README.md
 include LICENSE
 include preamble.txt
-include ctxclipper.py
 include pyproject.toml
+recursive-include ctxclipper *.py py.typed
+recursive-include tests *.py
