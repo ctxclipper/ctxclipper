@@ -8,7 +8,6 @@ import pytest
 
 from ctxclipper.core import adjust_budget, read_file_blocks, run
 from ctxclipper.exceptions import ClipboardError, DirectoryError
-from ctxclipper.types import FileBlock
 
 
 class TestReadFileBlocks:
@@ -32,7 +31,7 @@ class TestReadFileBlocks:
     def test_skips_binary_files(self, sample_repo_with_binary: Path) -> None:
         """Should skip binary files."""
         rel_paths = ["README.md", "image.png"]
-        blocks, binary, errors, truncated = read_file_blocks(
+        blocks, binary, errors, _truncated = read_file_blocks(
             str(sample_repo_with_binary), rel_paths, max_file_bytes=1_000_000
         )
 
@@ -46,7 +45,7 @@ class TestReadFileBlocks:
         large_file = temp_dir / "large.txt"
         large_file.write_text("x" * 1000)
 
-        blocks, binary, errors, truncated = read_file_blocks(
+        blocks, _binary, _errors, truncated = read_file_blocks(
             str(temp_dir), ["large.txt"], max_file_bytes=100
         )
 
@@ -61,7 +60,7 @@ class TestReadFileBlocks:
         test_file.write_text("content")
 
         rel_paths = ["test.txt", "nonexistent.txt"]
-        blocks, binary, errors, truncated = read_file_blocks(
+        blocks, _binary, _errors, _truncated = read_file_blocks(
             str(temp_dir), rel_paths, max_file_bytes=1_000_000
         )
 
@@ -72,7 +71,7 @@ class TestReadFileBlocks:
     def test_skips_directories(self, sample_repo: Path) -> None:
         """Should skip directories in rel_paths."""
         rel_paths = ["src", "README.md"]
-        blocks, binary, errors, truncated = read_file_blocks(
+        blocks, _binary, _errors, _truncated = read_file_blocks(
             str(sample_repo), rel_paths, max_file_bytes=1_000_000
         )
 
@@ -192,9 +191,7 @@ class TestRun:
 
     def test_legacy_format(self, sample_repo: Path, capsys) -> None:
         """Should use legacy format when requested."""
-        args = self._make_args(
-            path=str(sample_repo), no_copy=True, stdout=True, format="legacy"
-        )
+        args = self._make_args(path=str(sample_repo), no_copy=True, stdout=True, format="legacy")
         exit_code = run(args)
 
         captured = capsys.readouterr()
@@ -202,9 +199,7 @@ class TestRun:
         assert "=== FILE:" in captured.out
 
     @patch("ctxclipper.core.copy_to_clipboard")
-    def test_clipboard_failure_raises(
-        self, mock_clipboard, sample_repo: Path
-    ) -> None:
+    def test_clipboard_failure_raises(self, mock_clipboard, sample_repo: Path) -> None:
         """Should raise ClipboardError when clipboard fails."""
         mock_clipboard.return_value = False
         args = self._make_args(path=str(sample_repo), no_copy=False)

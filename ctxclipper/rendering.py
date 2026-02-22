@@ -1,30 +1,25 @@
 """Output rendering: XML and legacy text formats."""
 
 import os
-from typing import List, Optional, Sequence
+from typing import Optional, Sequence
 
 from .types import FileBlock
 
 __all__ = [
-    "xml_escape_attr",
     "cdata_wrap",
-    "render_section",
-    "render_block",
-    "wrap_files_root",
-    "wrap_chunk",
-    "read_text_file",
     "join_texts",
+    "read_text_file",
+    "render_block",
+    "render_section",
+    "wrap_chunk",
+    "wrap_files_root",
+    "xml_escape_attr",
 ]
 
 
 def xml_escape_attr(s: str) -> str:
     """Escape a string for use in an XML attribute."""
-    return (
-        s.replace("&", "&amp;")
-        .replace('"', "&quot;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def cdata_wrap(text: str) -> str:

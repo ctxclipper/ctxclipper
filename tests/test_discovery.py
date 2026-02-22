@@ -3,8 +3,6 @@
 import os
 from pathlib import Path
 
-import pytest
-
 from ctxclipper.discovery import (
     discover_files,
     git_list_files,
@@ -87,67 +85,88 @@ class TestShouldIgnorePath:
 
     def test_ignore_by_name(self) -> None:
         """Paths containing ignored names should be ignored."""
-        assert should_ignore_path(
-            "src/node_modules/package.json",
-            ignore_names={"node_modules"},
-            ignore_globs=[],
-            include_dotfiles=True,
-        ) is True
+        assert (
+            should_ignore_path(
+                "src/node_modules/package.json",
+                ignore_names={"node_modules"},
+                ignore_globs=[],
+                include_dotfiles=True,
+            )
+            is True
+        )
 
     def test_ignore_dotfiles(self) -> None:
         """Dotfiles should be ignored when include_dotfiles is False."""
-        assert should_ignore_path(
-            ".hidden/file.txt",
-            ignore_names=set(),
-            ignore_globs=[],
-            include_dotfiles=False,
-        ) is True
+        assert (
+            should_ignore_path(
+                ".hidden/file.txt",
+                ignore_names=set(),
+                ignore_globs=[],
+                include_dotfiles=False,
+            )
+            is True
+        )
 
     def test_include_dotfiles(self) -> None:
         """Dotfiles should be included when include_dotfiles is True."""
-        assert should_ignore_path(
-            ".hidden/file.txt",
-            ignore_names=set(),
-            ignore_globs=[],
-            include_dotfiles=True,
-        ) is False
+        assert (
+            should_ignore_path(
+                ".hidden/file.txt",
+                ignore_names=set(),
+                ignore_globs=[],
+                include_dotfiles=True,
+            )
+            is False
+        )
 
     def test_ignore_glob_pattern(self) -> None:
         """Glob patterns should match correctly."""
-        assert should_ignore_path(
-            "package-lock.json",
-            ignore_names=set(),
-            ignore_globs=["*.json"],
-            include_dotfiles=True,
-        ) is True
+        assert (
+            should_ignore_path(
+                "package-lock.json",
+                ignore_names=set(),
+                ignore_globs=["*.json"],
+                include_dotfiles=True,
+            )
+            is True
+        )
 
     def test_ignore_glob_directory_pattern(self) -> None:
         """Directory glob patterns should match."""
-        assert should_ignore_path(
-            "dist/bundle.js",
-            ignore_names=set(),
-            ignore_globs=["dist/**"],
-            include_dotfiles=True,
-        ) is True
+        assert (
+            should_ignore_path(
+                "dist/bundle.js",
+                ignore_names=set(),
+                ignore_globs=["dist/**"],
+                include_dotfiles=True,
+            )
+            is True
+        )
 
     def test_anchored_glob_pattern(self) -> None:
         """Anchored patterns should only match from root."""
         # Should match - pattern is anchored and matches from root
-        assert should_ignore_path(
-            "src/file.py",
-            ignore_names=set(),
-            ignore_globs=["/src/*.py"],
-            include_dotfiles=True,
-        ) is True
+        assert (
+            should_ignore_path(
+                "src/file.py",
+                ignore_names=set(),
+                ignore_globs=["/src/*.py"],
+                include_dotfiles=True,
+            )
+            is True
+        )
 
     def test_normal_file_not_ignored(self) -> None:
         """Normal files should not be ignored."""
-        assert should_ignore_path(
-            "src/main.py",
-            ignore_names=set(),
-            ignore_globs=[],
-            include_dotfiles=True,
-        ) is False
+        assert (
+            should_ignore_path(
+                "src/main.py",
+                ignore_names=set(),
+                ignore_globs=[],
+                include_dotfiles=True,
+            )
+            is False
+        )
 
 
 class TestInGitWorktree:
@@ -223,7 +242,7 @@ class TestDiscoverFiles:
 
     def test_discovers_all_files(self, sample_repo: Path) -> None:
         """Should discover all non-ignored files."""
-        files, used_git = discover_files(
+        files, _used_git = discover_files(
             str(sample_repo),
             ignore_names=set(),
             ignore_globs=[],
@@ -276,7 +295,7 @@ class TestDiscoverFiles:
 
     def test_git_repo_uses_git(self, git_repo: Path) -> None:
         """Should use git when in git repo."""
-        files, used_git = discover_files(
+        _files, used_git = discover_files(
             str(git_repo),
             ignore_names=set(),
             ignore_globs=[],

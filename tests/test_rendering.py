@@ -1,7 +1,5 @@
 """Tests for rendering module."""
 
-import pytest
-
 from ctxclipper.rendering import (
     cdata_wrap,
     join_texts,

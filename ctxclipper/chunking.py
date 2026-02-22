@@ -9,10 +9,10 @@ from .tokenization import fits_budget
 from .types import ChunkEntry, ChunkWithEntries, Encoder, FileBlock
 
 __all__ = [
-    "split_big_file",
     "pack_chunks",
-    "trim_largest_first",
     "print_chunk_file_tokens",
+    "split_big_file",
+    "trim_largest_first",
 ]
 
 logger = logging.getLogger(__name__)
@@ -112,9 +112,7 @@ def split_big_file(
         if raw:
             piece_raw += "\n\n[CONTINUES IN NEXT CHUNK]\n"
 
-        rendered_piece = render_block(
-            FileBlock(rel_path=block.rel_path, raw=piece_raw), fmt
-        )
+        rendered_piece = render_block(FileBlock(rel_path=block.rel_path, raw=piece_raw), fmt)
 
         # Safety: ensure rendered piece fits (may need trimming due to continuation marker)
         while (
@@ -127,9 +125,7 @@ def split_big_file(
             and len(piece_raw) > 0
         ):
             piece_raw = piece_raw[:-1]
-            rendered_piece = render_block(
-                FileBlock(rel_path=block.rel_path, raw=piece_raw), fmt
-            )
+            rendered_piece = render_block(FileBlock(rel_path=block.rel_path, raw=piece_raw), fmt)
 
         pieces.append(rendered_piece)
 
@@ -200,9 +196,7 @@ def pack_chunks(
                 cur = []
                 cur_entries = []
 
-            pieces = split_big_file(
-                b, fmt, max_chars=max_chars, max_tokens=max_tokens, enc=enc
-            )
+            pieces = split_big_file(b, fmt, max_chars=max_chars, max_tokens=max_tokens, enc=enc)
             for p in pieces:
                 chunks.append(wrap_files_root(p, fmt))
                 chunk_entries.append([(b.rel_path, p)])
@@ -293,6 +287,7 @@ def print_chunk_file_tokens(
         label: Label for the output (e.g., "Chunk 1/3").
     """
     import sys
+
     from .tokenization import count_tokens_with_encoder
 
     print(f"[INFO] {label} file tokens:", file=sys.stderr)

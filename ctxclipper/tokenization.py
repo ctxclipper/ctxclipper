@@ -2,27 +2,24 @@
 
 import logging
 import re
-from functools import lru_cache
 from typing import Optional, Tuple
 
 from .constants import DEFAULT_ENCODING
 from .types import Encoder, TokenizerResult
 
 __all__ = [
-    "get_tokenizer",
     "count_tokens",
     "count_tokens_with_encoder",
-    "token_len",
-    "safe_token_len",
     "fits_budget",
+    "get_tokenizer",
+    "safe_token_len",
+    "token_len",
 ]
 
 logger = logging.getLogger(__name__)
 
 
-def get_tokenizer(
-    model: Optional[str], encoding_name: Optional[str]
-) -> TokenizerResult:
+def get_tokenizer(model: Optional[str], encoding_name: Optional[str]) -> TokenizerResult:
     """
     Get a tiktoken encoder for the specified model or encoding.
 
@@ -119,7 +116,9 @@ def count_tokens(
     except KeyError:
         try:
             enc = tiktoken.get_encoding(encoding_name or DEFAULT_ENCODING)
-            return len(enc.encode(text)), f"Unknown model '{model}', used encoding '{encoding_name or DEFAULT_ENCODING}'"
+            return len(
+                enc.encode(text)
+            ), f"Unknown model '{model}', used encoding '{encoding_name or DEFAULT_ENCODING}'"
         except Exception as e:
             return None, f"Tokenization failed: {e}"
     except Exception as e:

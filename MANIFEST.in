@@ -1,4 +1,7 @@
 include README.md
+include CHANGELOG.md
+include CONTRIBUTING.md
+include SECURITY.md
 include LICENSE
 include preamble.txt
 include pyproject.toml

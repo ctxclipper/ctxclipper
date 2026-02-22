@@ -1,10 +1,10 @@
 """Custom exceptions for ctxclipper."""
 
 __all__ = [
-    "CtxclipperError",
-    "FileReadError",
     "ClipboardError",
+    "CtxclipperError",
     "DirectoryError",
+    "FileReadError",
 ]
 
 

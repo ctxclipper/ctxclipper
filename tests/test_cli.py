@@ -2,7 +2,7 @@
 
 import pytest
 
-from ctxclipper.cli import create_parser, parse_args
+from ctxclipper.cli import parse_args
 from ctxclipper.constants import (
     DEFAULT_MAX_CHARS,
     DEFAULT_MAX_FILE_BYTES,

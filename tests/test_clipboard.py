@@ -1,9 +1,6 @@
 """Tests for clipboard module."""
 
-import platform
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from ctxclipper.clipboard import copy_to_clipboard
 
@@ -97,4 +94,4 @@ class TestCopyToClipboard:
 
             # Check that communicate was called with UTF-8 encoded bytes
             call_args = mock_process.communicate.call_args
-            assert call_args[0][0] == "Hello 世界".encode("utf-8")
+            assert call_args[0][0] == "Hello 世界".encode()

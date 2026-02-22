@@ -9,13 +9,13 @@ from typing import Any, List, Optional, Set, Tuple
 from .constants import BINARY_DETECTION_BYTES
 
 __all__ = [
-    "is_binary",
-    "in_git_worktree",
+    "discover_files",
     "git_list_files",
+    "in_git_worktree",
+    "is_binary",
     "load_gitignore_pathspec",
     "normalize_glob",
     "should_ignore_path",
-    "discover_files",
 ]
 
 logger = logging.getLogger(__name__)
@@ -94,12 +94,12 @@ def load_gitignore_pathspec(base_path: str) -> Tuple[Optional[Any], Optional[str
 
     if os.path.exists(gitignore_path):
         try:
-            with open(gitignore_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(gitignore_path, encoding="utf-8", errors="replace") as f:
                 patterns.extend(line.rstrip("\n") for line in f)
         except OSError as e:
             logger.warning("Failed to read .gitignore: %s", e)
 
-    spec = pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+    spec = pathspec.PathSpec.from_lines("gitignore", patterns)
     return spec, None
 
 

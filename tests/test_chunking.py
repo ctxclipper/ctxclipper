@@ -1,7 +1,5 @@
 """Tests for chunking module."""
 
-import pytest
-
 from ctxclipper.chunking import pack_chunks, split_big_file, trim_largest_first
 from ctxclipper.tokenization import get_tokenizer
 from ctxclipper.types import FileBlock
@@ -100,7 +98,7 @@ class TestTrimLargestFirst:
             FileBlock(rel_path="small.py", raw="x" * 10),
             FileBlock(rel_path="large.py", raw="y" * 1000),
         ]
-        result, total = trim_largest_first(blocks, max_chars=100, keep_per_file=20)
+        result, _total = trim_largest_first(blocks, max_chars=100, keep_per_file=20)
         # Large file should be truncated
         assert "[TRUNCATED:" in result[1].raw or "[OMITTED:" in result[1].raw
         # Small file should be unchanged
@@ -112,7 +110,7 @@ class TestTrimLargestFirst:
             FileBlock(rel_path="a.py", raw="x" * 500),
             FileBlock(rel_path="b.py", raw="y" * 500),
         ]
-        result, total = trim_largest_first(blocks, max_chars=100, keep_per_file=30)
+        result, _total = trim_largest_first(blocks, max_chars=100, keep_per_file=30)
         # Both should be trimmed
         assert "[TRUNCATED:" in result[0].raw or "[OMITTED:" in result[0].raw
         assert "[TRUNCATED:" in result[1].raw or "[OMITTED:" in result[1].raw

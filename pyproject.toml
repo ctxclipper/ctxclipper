@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
 license-files = ["LICENSE"]
+keywords = ["clipboard", "context-window", "gitignore", "llm", "prompt-engineering"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
@@ -32,9 +33,17 @@ dependencies = [
   "pathspec>=0.11",
 ]
 
+[project.urls]
+Homepage = "https://github.com/ctxclipper/ctxclipper"
+Repository = "https://github.com/ctxclipper/ctxclipper"
+Issues = "https://github.com/ctxclipper/ctxclipper/issues"
+Changelog = "https://github.com/ctxclipper/ctxclipper/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 tokens = ["tiktoken>=0.5"]
 dev = [
+  "build>=1.0",
+  "twine>=5.0",
   "pytest>=7.0",
   "pytest-cov>=4.0",
   "mypy>=1.0",

@@ -1,6 +1,5 @@
 """Pytest fixtures for ctxclipper tests."""
 
-import os
 import tempfile
 from pathlib import Path
 from typing import Generator
@@ -27,12 +26,8 @@ def sample_repo(temp_dir: Path) -> Path:
     # Create sample files
     (temp_dir / "README.md").write_text("# Sample Project\n\nThis is a test.")
     (temp_dir / "src" / "main.py").write_text('def main():\n    print("Hello")\n')
-    (temp_dir / "src" / "utils" / "helpers.py").write_text(
-        "def helper():\n    return 42\n"
-    )
-    (temp_dir / "tests" / "test_main.py").write_text(
-        "def test_main():\n    assert True\n"
-    )
+    (temp_dir / "src" / "utils" / "helpers.py").write_text("def helper():\n    return 42\n")
+    (temp_dir / "tests" / "test_main.py").write_text("def test_main():\n    assert True\n")
 
     # Create a .gitignore
     (temp_dir / ".gitignore").write_text("__pycache__/\n*.pyc\n.env\n")

@@ -81,9 +81,7 @@ def read_file_blocks(
     return blocks, skipped_binary, skipped_errors, truncated_files
 
 
-def adjust_budget(
-    base: Optional[int], overhead: int, label: str
-) -> Tuple[Optional[int], bool]:
+def adjust_budget(base: Optional[int], overhead: int, label: str) -> Tuple[Optional[int], bool]:
     """
     Adjust budget by subtracting overhead.
 
@@ -146,9 +144,7 @@ def run(args: argparse.Namespace) -> int:
     ignore_globs = list(args.ignore_glob)
     include_dotfiles = bool(args.include_dotfiles)
 
-    rel_paths, used_git = discover_files(
-        base_path, ignore_names, ignore_globs, include_dotfiles
-    )
+    rel_paths, used_git = discover_files(base_path, ignore_names, ignore_globs, include_dotfiles)
 
     # Read file contents
     blocks, skipped_binary, skipped_errors, truncated_files = read_file_blocks(
@@ -336,9 +332,7 @@ def _handle_split_mode(
 
     # Warn about over-budget chunks
     for i, ch in enumerate(wrapped_chunks, start=1):
-        if not fits_budget(
-            ch, max_chars=max_chars_budget, max_tokens=max_tokens_budget, enc=enc
-        ):
+        if not fits_budget(ch, max_chars=max_chars_budget, max_tokens=max_tokens_budget, enc=enc):
             print(
                 f"[WARN] Chunk {i} exceeds budget after preamble/question; "
                 "consider increasing limits.",
@@ -365,8 +359,7 @@ def _handle_split_mode(
             tok, note = count_tokens_with_encoder(chunk, enc, args.model, args.encoding)
             tok_str = f"{tok} tokens" if tok is not None else f"tokens unavailable ({note})"
             print(
-                f"[INFO] Copied chunk {global_idx}/{total_chunks} "
-                f"({len(chunk)} chars, {tok_str})",
+                f"[INFO] Copied chunk {global_idx}/{total_chunks} ({len(chunk)} chars, {tok_str})",
                 file=sys.stderr,
             )
 
@@ -379,9 +372,11 @@ def _handle_split_mode(
         )
 
         if not args.no_copy and args.interactive and i_pos < len(selected_indices):
-            ans = input(
-                "Paste it, then press Enter for next chunk (or 'q' to quit): "
-            ).strip().lower()
+            ans = (
+                input("Paste it, then press Enter for next chunk (or 'q' to quit): ")
+                .strip()
+                .lower()
+            )
             if ans == "q":
                 break
 
@@ -441,9 +436,7 @@ def _handle_single_mode(
         and not args.split
         and max_chars_budget is not None
     ):
-        working_blocks, _ = trim_largest_first(
-            blocks, max_chars_budget, args.keep_per_file
-        )
+        working_blocks, _ = trim_largest_first(blocks, max_chars_budget, args.keep_per_file)
 
     final_text = (
         f"{preamble_rendered}"
@@ -462,8 +455,6 @@ def _handle_single_mode(
         sys.stdout.write(final_text)
 
     total_chars = len(final_text)
-    token_count, token_note = count_tokens_with_encoder(
-        final_text, enc, args.model, args.encoding
-    )
+    token_count, token_note = count_tokens_with_encoder(final_text, enc, args.model, args.encoding)
 
     return total_chars, token_count, token_note

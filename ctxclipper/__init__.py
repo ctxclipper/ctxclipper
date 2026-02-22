@@ -20,15 +20,15 @@ from .types import FileBlock
 
 __version__ = "0.1.0"
 __all__ = [
+    "ClipboardError",
+    "CtxclipperError",
+    "DirectoryError",
+    "FileBlock",
+    "FileReadError",
     "__version__",
     "main",
-    "run",
     "parse_args",
-    "FileBlock",
-    "CtxclipperError",
-    "FileReadError",
-    "ClipboardError",
-    "DirectoryError",
+    "run",
 ]
 
 # Configure null handler for library use

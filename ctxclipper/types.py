@@ -1,17 +1,17 @@
 """Type definitions and dataclasses for ctxclipper."""
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from tiktoken import Encoding
 
 __all__ = [
-    "FileBlock",
     "ChunkEntry",
     "ChunkWithEntries",
-    "TokenizerResult",
     "Encoder",
+    "FileBlock",
+    "TokenizerResult",
 ]
 
 # Type aliases
@@ -23,6 +23,7 @@ ChunkWithEntries = Tuple[str, List[ChunkEntry]]  # (chunk_text, entries)
 @dataclass
 class FileBlock:
     """Represents a file's content ready for rendering."""
+
     rel_path: str
     raw: str  # unwrapped content
 
@@ -30,6 +31,7 @@ class FileBlock:
 @dataclass
 class TokenizerResult:
     """Result of initializing a tokenizer."""
+
     encoder: Encoder
     note: Optional[str]
     source: str  # "model", "override", "encoding", or "none"
