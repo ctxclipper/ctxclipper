@@ -364,11 +364,6 @@ def run(args: argparse.Namespace) -> int:
     file_read_result = read_file_blocks(base_path, rel_paths, args.max_file_bytes)
     blocks = file_read_result.blocks
 
-    # Initialize tokenizer
-    tokenizer_result = get_tokenizer(args.model, args.encoding)
-    enc = tokenizer_result.encoder
-    _log_tokenizer_info(tokenizer_result, args.model, args.max_tokens)
-
     # Calculate budgets
     if args.max_chars == 0:
         max_chars_budget: Optional[int] = None
@@ -376,9 +371,15 @@ def run(args: argparse.Namespace) -> int:
         max_chars_budget = (
             None if args.max_chars is None else max(0, args.max_chars - args.reserve_chars)
         )
-    max_tokens_budget: Optional[int] = (
+    requested_max_tokens_budget: Optional[int] = (
         None if args.max_tokens is None else max(0, args.max_tokens - args.reserve_tokens)
     )
+    tokenizer_result = get_tokenizer(args.model, args.encoding)
+    enc = tokenizer_result.encoder
+    max_tokens_budget = requested_max_tokens_budget
+    _log_tokenizer_info(tokenizer_result, args.model, args.max_tokens)
+
+    full_rendered = _render_full_text(blocks, args.format, preamble_rendered, question_rendered)
 
     # Calculate overhead from preamble/question
     prefix_chars = len(preamble_rendered)
@@ -390,9 +391,6 @@ def run(args: argparse.Namespace) -> int:
 
     adj_max_chars_budget, _ = adjust_budget(max_chars_budget, max_overhead_chars, "Char")
     adj_max_tokens_budget, _ = adjust_budget(max_tokens_budget, max_overhead_tokens, "Token")
-
-    # Render full content for budget check
-    full_rendered = _render_full_text(blocks, args.format, preamble_rendered, question_rendered)
 
     chunk_info: Optional[str] = None
 
@@ -630,7 +628,13 @@ def _handle_single_mode(
             raise ClipboardError("Failed to copy to clipboard")
 
     entries = [(b.rel_path, render_block(b, args.format)) for b in working_blocks]
-    print_chunk_file_tokens(entries, enc, args.model, args.encoding, "Chunk 1/1")
+    print_chunk_file_tokens(
+        entries,
+        enc,
+        args.model,
+        args.encoding,
+        "Chunk 1/1",
+    )
 
     if args.stdout:
         sys.stdout.write(final_text)
