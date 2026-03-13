@@ -19,6 +19,23 @@ python -m build
 twine check dist/*
 ```
 
+## Performance
+
+Use the benchmark harness for repeatable performance checks:
+
+```bash
+python3 scripts/benchmark.py --case all
+```
+
+Useful focused runs:
+
+```bash
+python3 scripts/benchmark.py --case warm-run
+python3 scripts/benchmark.py --case split-tokens --profile-case split-tokens
+python3 scripts/benchmark.py --case discover-git
+python3 scripts/benchmark.py --case discover-scan
+```
+
 ## Pull Requests
 
 1. Keep changes focused and include tests for behavior changes.

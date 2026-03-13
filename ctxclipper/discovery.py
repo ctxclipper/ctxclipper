@@ -74,6 +74,14 @@ def git_list_files(base_path: str) -> List[str]:
     return [p.decode("utf-8", "replace") for p in out.split(b"\0") if p]
 
 
+def _try_git_list_files(base_path: str) -> Optional[List[str]]:
+    """Try git-backed discovery, returning None when unavailable."""
+    try:
+        return git_list_files(base_path)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
 def load_gitignore_pathspec(base_path: str) -> Tuple[Optional[Any], Optional[str]]:
     """
     Load .gitignore patterns for non-git mode using pathspec library.
@@ -204,12 +212,10 @@ def discover_files(
     rel_paths: List[str] = []
     used_git = False
 
-    if in_git_worktree(base_path):
-        try:
-            rel_paths = git_list_files(base_path)
-            used_git = True
-        except subprocess.CalledProcessError as e:
-            logger.warning("git listing failed, falling back to scan: %s", e)
+    git_rel_paths = _try_git_list_files(base_path)
+    if git_rel_paths is not None:
+        rel_paths = git_rel_paths
+        used_git = True
 
     if not used_git:
         gitignore_spec, gi_err = load_gitignore_pathspec(base_path)

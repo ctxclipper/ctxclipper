@@ -3,6 +3,7 @@
 import os
 import warnings
 from pathlib import Path
+from unittest.mock import patch
 
 from ctxclipper.discovery import (
     discover_files,
@@ -307,6 +308,19 @@ class TestDiscoverFiles:
         )
 
         assert used_git is True
+
+    def test_git_repo_discovery_skips_separate_worktree_probe(self, git_repo: Path) -> None:
+        """Git discovery should not issue a separate worktree probe on the success path."""
+        with patch("ctxclipper.discovery.in_git_worktree", side_effect=AssertionError):
+            files, used_git = discover_files(
+                str(git_repo),
+                ignore_names=set(),
+                ignore_globs=[],
+                include_dotfiles=True,
+            )
+
+        assert used_git is True
+        assert "file1.py" in files
 
     def test_non_git_uses_scan(self, temp_dir: Path) -> None:
         """Should use directory scan when not in git repo."""

@@ -1,5 +1,9 @@
 """Tests for tokenization module."""
 
+import sys
+from types import SimpleNamespace
+
+import ctxclipper.tokenization as tokenization_module
 from ctxclipper.tokenization import (
     count_tokens,
     count_tokens_with_encoder,
@@ -11,6 +15,40 @@ from ctxclipper.tokenization import (
 
 class TestGetTokenizer:
     """Tests for get_tokenizer function."""
+
+    def test_get_tokenizer_caches_encoder_resolution(self, monkeypatch) -> None:
+        """Repeated tokenizer requests should reuse cached encoder resolution."""
+
+        class FakeEncoding:
+            name = "o200k_base"
+
+            def encode(self, text: str) -> list[int]:
+                return [len(text)]
+
+        calls = {"get_encoding": 0}
+
+        def encoding_for_model(_model: str) -> FakeEncoding:
+            raise KeyError("unknown model")
+
+        def get_encoding(_name: str) -> FakeEncoding:
+            calls["get_encoding"] += 1
+            return FakeEncoding()
+
+        fake_tiktoken = SimpleNamespace(
+            encoding_for_model=encoding_for_model,
+            get_encoding=get_encoding,
+        )
+
+        tokenization_module._resolve_tokenizer.cache_clear()
+        monkeypatch.setitem(sys.modules, "tiktoken", fake_tiktoken)
+        try:
+            first = get_tokenizer(None, None)
+            second = get_tokenizer(None, None)
+        finally:
+            tokenization_module._resolve_tokenizer.cache_clear()
+
+        assert first.encoder is second.encoder
+        assert calls["get_encoding"] == 1
 
     def test_default_encoding(self) -> None:
         """Default encoding should return o200k_base."""

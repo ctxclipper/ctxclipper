@@ -2,6 +2,7 @@
 
 import logging
 import re
+from functools import lru_cache
 from typing import Optional, Tuple
 
 from .constants import DEFAULT_ENCODING
@@ -19,7 +20,14 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-def get_tokenizer(model: Optional[str], encoding_name: Optional[str]) -> TokenizerResult:
+@lru_cache(maxsize=32)
+def _resolve_tokenizer(
+    model: Optional[str], encoding_name: Optional[str]
+) -> Tuple[Encoder, Optional[str], str]:
+    """Resolve and cache tokenizer setup for repeated runs in one process."""
+    model_key = model or None
+    encoding_key = encoding_name or None
+
     """
     Get a tiktoken encoder for the specified model or encoding.
 
@@ -34,25 +42,25 @@ def get_tokenizer(model: Optional[str], encoding_name: Optional[str]) -> Tokeniz
         encoding_name: Explicit encoding name override.
 
     Returns:
-        TokenizerResult with encoder, optional note, and source type.
+        Tuple of (encoder, optional note, source type).
     """
     try:
         import tiktoken
     except ImportError:
-        return TokenizerResult(
-            encoder=None,
-            note="tiktoken not installed (pip install tiktoken)",
-            source="none",
+        return (
+            None,
+            "tiktoken not installed (pip install tiktoken)",
+            "none",
         )
 
-    model_raw = model or ""
+    model_raw = model_key or ""
     model_norm = model_raw.strip().lower()
 
     # Try model-specific encoding first
     if model_norm:
         try:
             enc = tiktoken.encoding_for_model(model_raw)
-            return TokenizerResult(encoder=enc, note=None, source="model")
+            return enc, None, "model"
         except KeyError:
             pass
 
@@ -65,27 +73,29 @@ def get_tokenizer(model: Optional[str], encoding_name: Optional[str]) -> Tokeniz
                 enc = tiktoken.get_encoding("o200k_base")
                 family = "gpt-5.*" if is_gpt5 else "o-series"
                 note = f"tiktoken lacks {family} mapping; using o200k_base"
-                return TokenizerResult(encoder=enc, note=note, source="override")
+                return enc, note, "override"
             except Exception as e:
-                return TokenizerResult(
-                    encoder=None,
-                    note=f"Tokenization failed: {e}",
-                    source="none",
-                )
+                return None, f"Tokenization failed: {e}", "none"
 
     # Fall back to explicit encoding
     try:
-        enc = tiktoken.get_encoding(encoding_name or DEFAULT_ENCODING)
+        enc = tiktoken.get_encoding(encoding_key or DEFAULT_ENCODING)
         fallback_note: Optional[str] = None
         if model_norm:
             fallback_note = f"Unknown model '{model_raw}', used encoding '{enc.name}'"
-        return TokenizerResult(encoder=enc, note=fallback_note, source="encoding")
+        return enc, fallback_note, "encoding"
     except Exception as e:
-        return TokenizerResult(
-            encoder=None,
-            note=f"Tokenization failed: {e}",
-            source="none",
-        )
+        return None, f"Tokenization failed: {e}", "none"
+
+
+def get_tokenizer(model: Optional[str], encoding_name: Optional[str]) -> TokenizerResult:
+    """
+    Get a tiktoken encoder for the specified model or encoding.
+
+    Returns a fresh TokenizerResult wrapper around a cached encoder resolution.
+    """
+    encoder, note, source = _resolve_tokenizer(model, encoding_name)
+    return TokenizerResult(encoder=encoder, note=note, source=source)
 
 
 def count_tokens(
