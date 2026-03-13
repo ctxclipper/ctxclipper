@@ -1,6 +1,7 @@
 """Tests for discovery module."""
 
 import os
+import warnings
 from pathlib import Path
 
 from ctxclipper.discovery import (
@@ -220,12 +221,15 @@ class TestLoadGitignorePathspec:
         gitignore = temp_dir / ".gitignore"
         gitignore.write_text("*.pyc\n__pycache__\n")
 
-        spec, error = load_gitignore_pathspec(str(temp_dir))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            spec, error = load_gitignore_pathspec(str(temp_dir))
 
         assert error is None
         assert spec is not None
         assert spec.match_file("test.pyc")
         assert spec.match_file("__pycache__")
+        assert not [w for w in caught if issubclass(w.category, DeprecationWarning)]
 
     def test_no_gitignore(self, temp_dir: Path) -> None:
         """Should return empty spec when no .gitignore exists."""

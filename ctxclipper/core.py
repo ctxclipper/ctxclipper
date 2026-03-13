@@ -1,15 +1,16 @@
 """Core orchestration logic for ctxclipper."""
 
 import argparse
+import copy
 import logging
 import os
 import sys
 from typing import List, Optional, Tuple, cast
 
-from .chunking import pack_chunks, print_chunk_file_tokens, trim_largest_first
+from .chunking import pack_chunks, print_chunk_file_tokens
 from .clipboard import copy_to_clipboard
 from .discovery import discover_files, is_binary
-from .exceptions import ClipboardError, DirectoryError
+from .exceptions import BudgetError, ClipboardError, DirectoryError
 from .rendering import (
     join_texts,
     read_text_file,
@@ -36,7 +37,7 @@ def read_file_blocks(
     base_path: str,
     rel_paths: List[str],
     max_file_bytes: int,
-) -> Tuple[List[FileBlock], int, int, int]:
+) -> Tuple[List[FileBlock], int, int, int, int]:
     """
     Read files and create FileBlocks.
 
@@ -46,15 +47,27 @@ def read_file_blocks(
         max_file_bytes: Maximum bytes to read per file.
 
     Returns:
-        Tuple of (blocks, skipped_binary, skipped_errors, truncated_files).
+        Tuple of (blocks, skipped_binary, skipped_symlinks, skipped_errors, truncated_files).
     """
     blocks: List[FileBlock] = []
     skipped_binary = 0
+    skipped_symlinks = 0
     skipped_errors = 0
     truncated_files = 0
+    base_real = os.path.realpath(base_path)
 
     for rel in rel_paths:
         abs_path = os.path.join(base_path, rel)
+        if os.path.islink(abs_path):
+            real_path = os.path.realpath(abs_path)
+            try:
+                if os.path.commonpath([base_real, real_path]) != base_real:
+                    skipped_symlinks += 1
+                    continue
+            except ValueError:
+                skipped_symlinks += 1
+                continue
+
         if not os.path.isfile(abs_path):
             continue
 
@@ -78,7 +91,7 @@ def read_file_blocks(
             logger.warning("Failed to read file %s: %s", abs_path, e)
             skipped_errors += 1
 
-    return blocks, skipped_binary, skipped_errors, truncated_files
+    return blocks, skipped_binary, skipped_symlinks, skipped_errors, truncated_files
 
 
 def adjust_budget(base: Optional[int], overhead: int, label: str) -> Tuple[Optional[int], bool]:
@@ -104,6 +117,63 @@ def adjust_budget(base: Optional[int], overhead: int, label: str) -> Tuple[Optio
         )
         return base, False
     return base - overhead, True
+
+
+def _render_full_text(
+    blocks: List[FileBlock],
+    fmt: str,
+    preamble_rendered: str,
+    question_rendered: str,
+) -> str:
+    """Render the complete payload for the current working set of files."""
+    files_rendered = wrap_files_root("".join(render_block(b, fmt) for b in blocks), fmt)
+    return f"{preamble_rendered}{files_rendered}{question_rendered}"
+
+
+def _trim_block_once(block: FileBlock, keep_per_file: int) -> FileBlock:
+    """Apply one best-effort trim step to a block."""
+    truncation_marker = "\n\n[TRUNCATED: exceeded max-chars budget]\n"
+    omit_msg = "[OMITTED: exceeded max-chars budget]\n"
+    potential_len = keep_per_file + len(truncation_marker)
+
+    if len(block.raw) > keep_per_file and potential_len < len(block.raw):
+        new_raw = block.raw[:keep_per_file] + truncation_marker
+        return FileBlock(rel_path=block.rel_path, raw=new_raw)
+
+    if len(block.raw) > len(omit_msg):
+        return FileBlock(rel_path=block.rel_path, raw=omit_msg)
+
+    return block
+
+
+def _trim_blocks_to_fit(
+    blocks: List[FileBlock],
+    fmt: str,
+    preamble_rendered: str,
+    question_rendered: str,
+    enc: Encoder,
+    max_chars_budget: Optional[int],
+    max_tokens_budget: Optional[int],
+    keep_per_file: int,
+) -> Tuple[List[FileBlock], str]:
+    """Trim blocks until the final rendered payload fits, or raise BudgetError."""
+    working_blocks = copy.deepcopy(blocks)
+
+    while True:
+        final_text = _render_full_text(working_blocks, fmt, preamble_rendered, question_rendered)
+        if fits_budget(
+            final_text,
+            max_chars=max_chars_budget,
+            max_tokens=max_tokens_budget,
+            enc=enc,
+        ):
+            return working_blocks, final_text
+
+        largest_idx = max(range(len(working_blocks)), key=lambda idx: len(working_blocks[idx].raw))
+        trimmed_block = _trim_block_once(working_blocks[largest_idx], keep_per_file)
+        if trimmed_block.raw == working_blocks[largest_idx].raw:
+            raise BudgetError("Unable to fit output within the requested budget in no-split mode")
+        working_blocks[largest_idx] = trimmed_block
 
 
 def run(args: argparse.Namespace) -> int:
@@ -147,7 +217,7 @@ def run(args: argparse.Namespace) -> int:
     rel_paths, used_git = discover_files(base_path, ignore_names, ignore_globs, include_dotfiles)
 
     # Read file contents
-    blocks, skipped_binary, skipped_errors, truncated_files = read_file_blocks(
+    blocks, skipped_binary, skipped_symlinks, skipped_errors, truncated_files = read_file_blocks(
         base_path, rel_paths, args.max_file_bytes
     )
 
@@ -200,10 +270,7 @@ def run(args: argparse.Namespace) -> int:
     adj_max_tokens_budget, _ = adjust_budget(max_tokens_budget, max_overhead_tokens, "Token")
 
     # Render full content for budget check
-    files_rendered = wrap_files_root(
-        "".join(render_block(b, args.format) for b in blocks), args.format
-    )
-    full_rendered = f"{preamble_rendered}{files_rendered}{question_rendered}"
+    full_rendered = _render_full_text(blocks, args.format, preamble_rendered, question_rendered)
 
     chunk_info: Optional[str] = None
 
@@ -240,7 +307,7 @@ def run(args: argparse.Namespace) -> int:
     print(f"[INFO] Mode: {'git' if used_git else 'scan'}", file=sys.stderr)
     print(
         f"[INFO] Files included: {len(blocks)} | skipped binary: {skipped_binary} "
-        f"| skipped errors: {skipped_errors}",
+        f"| skipped symlinks: {skipped_symlinks} | skipped errors: {skipped_errors}",
         file=sys.stderr,
     )
     print(f"[INFO] Truncated (max-file-bytes): {truncated_files}", file=sys.stderr)
@@ -423,26 +490,32 @@ def _handle_single_mode(
         ClipboardError: If clipboard copy fails.
     """
     working_blocks = blocks
+    final_text = full_rendered
 
-    # Optional trimming when split is off or not needed
-    if (
-        not fits_budget(
-            full_rendered,
+    if not args.split and not fits_budget(
+        final_text,
+        max_chars=max_chars_budget,
+        max_tokens=max_tokens_budget,
+        enc=enc,
+    ):
+        if args.trim == "largest":
+            working_blocks, final_text = _trim_blocks_to_fit(
+                blocks=blocks,
+                fmt=args.format,
+                preamble_rendered=preamble_rendered,
+                question_rendered=question_rendered,
+                enc=enc,
+                max_chars_budget=max_chars_budget,
+                max_tokens_budget=max_tokens_budget,
+                keep_per_file=args.keep_per_file,
+            )
+        if not fits_budget(
+            final_text,
             max_chars=max_chars_budget,
             max_tokens=max_tokens_budget,
             enc=enc,
-        )
-        and args.trim == "largest"
-        and not args.split
-        and max_chars_budget is not None
-    ):
-        working_blocks, _ = trim_largest_first(blocks, max_chars_budget, args.keep_per_file)
-
-    final_text = (
-        f"{preamble_rendered}"
-        f"{wrap_files_root(''.join(render_block(b, args.format) for b in working_blocks), args.format)}"
-        f"{question_rendered}"
-    )
+        ):
+            raise BudgetError("Unable to fit output within the requested budget in no-split mode")
 
     if not args.no_copy:
         if not copy_to_clipboard(final_text):

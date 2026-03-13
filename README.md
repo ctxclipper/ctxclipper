@@ -13,6 +13,7 @@ It gathers text files in a directory (respecting `.gitignore`), wraps them in an
 
 - **Clipboard-first**: Automatically copies formatted output to clipboard
 - **Git-aware**: Respects `.gitignore` patterns automatically in git repositories
+- **Safe by default**: Skips symlinked files that resolve outside the requested directory
 - **Token-aware**: Manages token/character budgets for LLM context windows
 - **Multiple formats**: XML (default) or legacy text format
 - **Smart chunking**: Splits large codebases into multiple chunks that fit your model's context
@@ -43,6 +44,8 @@ Skip clipboard copy (useful in CI/headless environments):
 ```bash
 ctxclipper . --no-copy --stdout
 ```
+
+When `--no-split` is set, ctxclipper now fails with an error instead of emitting oversized output if a single rendered payload still cannot fit within the requested budget.
 
 ## Usage Examples
 
@@ -105,6 +108,11 @@ Run `ctxclipper --help` for full options.
 - macOS: `pbcopy` (built in)
 - Windows: `clip` or PowerShell `Set-Clipboard`
 - Linux: one of `wl-clipboard`, `xclip`, or `xsel`
+
+## Safety Notes
+
+- Symlinked files are included only when their resolved target stays within the requested directory tree.
+- Symlinked files that resolve outside the requested directory are skipped.
 
 ## Development
 

@@ -1,7 +1,11 @@
 """Tests for CLI argument parsing."""
 
+import argparse
+from unittest.mock import patch
+
 import pytest
 
+from ctxclipper import main
 from ctxclipper.cli import parse_args
 from ctxclipper.constants import (
     DEFAULT_MAX_CHARS,
@@ -10,6 +14,7 @@ from ctxclipper.constants import (
     DEFAULT_RESERVE_CHARS,
     DEFAULT_RESERVE_TOKENS,
 )
+from ctxclipper.exceptions import BudgetError
 
 
 class TestParseArgs:
@@ -160,3 +165,21 @@ class TestParseArgs:
         """--interactive and --non-interactive should be mutually exclusive."""
         with pytest.raises(SystemExit):
             parse_args(["--interactive", "--non-interactive"])
+
+
+class TestMain:
+    """Tests for the CLI entry point."""
+
+    @patch("ctxclipper.run")
+    @patch("ctxclipper.parse_args")
+    def test_budget_error_exits_with_stderr(self, mock_parse_args, mock_run, capsys) -> None:
+        """Budget errors should print a user-facing error and exit non-zero."""
+        mock_parse_args.return_value = argparse.Namespace()
+        mock_run.side_effect = BudgetError("cannot fit within budget")
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        captured = capsys.readouterr()
+        assert exc_info.value.code == 1
+        assert "[ERROR] cannot fit within budget" in captured.err

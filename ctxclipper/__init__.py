@@ -11,6 +11,7 @@ import logging
 from .cli import parse_args
 from .core import run
 from .exceptions import (
+    BudgetError,
     ClipboardError,
     CtxclipperError,
     DirectoryError,
@@ -20,6 +21,7 @@ from .types import FileBlock
 
 __version__ = "0.1.0"
 __all__ = [
+    "BudgetError",
     "ClipboardError",
     "CtxclipperError",
     "DirectoryError",

@@ -1,6 +1,7 @@
 """Custom exceptions for ctxclipper."""
 
 __all__ = [
+    "BudgetError",
     "ClipboardError",
     "CtxclipperError",
     "DirectoryError",
@@ -37,3 +38,10 @@ class DirectoryError(CtxclipperError):
         self.path = path
         self.reason = reason
         super().__init__(f"{reason}: {path}")
+
+
+class BudgetError(CtxclipperError):
+    """Raised when output cannot fit within the requested budget."""
+
+    def __init__(self, message: str = "Output exceeds the requested budget") -> None:
+        super().__init__(message)
