@@ -1,7 +1,6 @@
 """Core orchestration logic for ctxclipper."""
 
 import argparse
-import copy
 import logging
 import os
 import sys
@@ -132,7 +131,18 @@ def _render_full_text(
     question_rendered: str,
 ) -> str:
     """Render the complete payload for the current working set of files."""
-    files_rendered = wrap_files_root("".join(render_block(b, fmt) for b in blocks), fmt)
+    rendered_blocks = [render_block(b, fmt) for b in blocks]
+    return _render_full_text_from_rendered(rendered_blocks, fmt, preamble_rendered, question_rendered)
+
+
+def _render_full_text_from_rendered(
+    rendered_blocks: List[str],
+    fmt: str,
+    preamble_rendered: str,
+    question_rendered: str,
+) -> str:
+    """Render the complete payload from already-rendered file blocks."""
+    files_rendered = wrap_files_root("".join(rendered_blocks), fmt)
     return f"{preamble_rendered}{files_rendered}{question_rendered}"
 
 
@@ -163,23 +173,45 @@ def _trim_blocks_to_fit(
     keep_per_file: int,
 ) -> Tuple[List[FileBlock], str]:
     """Trim blocks until the final rendered payload fits, or raise BudgetError."""
-    working_blocks = copy.deepcopy(blocks)
+    working_blocks = list(blocks)
+    rendered_blocks = [render_block(block, fmt) for block in working_blocks]
+    fixed_chars = len(preamble_rendered) + len(question_rendered) + len(wrap_files_root("", fmt))
+    total_chars = fixed_chars + sum(len(rendered) for rendered in rendered_blocks)
 
     while True:
-        final_text = _render_full_text(working_blocks, fmt, preamble_rendered, question_rendered)
-        if fits_budget(
-            final_text,
-            max_chars=max_chars_budget,
-            max_tokens=max_tokens_budget,
-            enc=enc,
-        ):
+        final_text: Optional[str] = None
+        chars_fit = max_chars_budget is None or total_chars <= max_chars_budget
+
+        if chars_fit and max_tokens_budget is None:
+            final_text = _render_full_text_from_rendered(
+                rendered_blocks, fmt, preamble_rendered, question_rendered
+            )
             return working_blocks, final_text
+
+        if chars_fit:
+            final_text = _render_full_text_from_rendered(
+                rendered_blocks, fmt, preamble_rendered, question_rendered
+            )
+            if fits_budget(
+                final_text,
+                max_chars=None,
+                max_tokens=max_tokens_budget,
+                enc=enc,
+            ):
+                return working_blocks, final_text
 
         largest_idx = max(range(len(working_blocks)), key=lambda idx: len(working_blocks[idx].raw))
         trimmed_block = _trim_block_once(working_blocks[largest_idx], keep_per_file)
         if trimmed_block.raw == working_blocks[largest_idx].raw:
+            if final_text is None:
+                final_text = _render_full_text_from_rendered(
+                    rendered_blocks, fmt, preamble_rendered, question_rendered
+                )
             raise _make_budget_error(final_text, enc, max_chars_budget, max_tokens_budget)
+        previous_rendered = rendered_blocks[largest_idx]
         working_blocks[largest_idx] = trimmed_block
+        rendered_blocks[largest_idx] = render_block(trimmed_block, fmt)
+        total_chars += len(rendered_blocks[largest_idx]) - len(previous_rendered)
 
 
 def _log_tokenizer_info(

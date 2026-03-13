@@ -162,16 +162,23 @@ def pack_chunks(
     chunk_entries: List[List[ChunkEntry]] = []
     cur: List[str] = []
     cur_entries: List[ChunkEntry] = []
+    rendered_blocks = [render_block(block, fmt) for block in blocks]
 
-    for b in blocks:
-        rendered = render_block(b, fmt)
+    single_block_token_fits: Optional[List[bool]] = None
+    if enc is not None and max_tokens is not None and rendered_blocks:
+        wrapped_blocks = [wrap_files_root(rendered, fmt) for rendered in rendered_blocks]
+        single_block_token_fits = [
+            len(tokens) <= max_tokens for tokens in enc.encode_batch(wrapped_blocks)
+        ]
 
-        if fits_budget(
-            wrap_files_root(rendered, fmt),
-            max_chars=max_chars,
-            max_tokens=max_tokens,
-            enc=enc,
-        ):
+    for idx, (b, rendered) in enumerate(zip(blocks, rendered_blocks)):
+        single_block_fits = True
+        if max_chars is not None and len(wrap_files_root(rendered, fmt)) > max_chars:
+            single_block_fits = False
+        if single_block_token_fits is not None and not single_block_token_fits[idx]:
+            single_block_fits = False
+
+        if single_block_fits:
             # File fits in a single chunk
             candidate = "".join(cur) + rendered
             if cur and not fits_budget(
@@ -296,10 +303,16 @@ def print_chunk_file_tokens(
         return
 
     rows: List[Tuple[int, int, str, Optional[str]]] = []
-    for idx, (rel_path, rendered) in enumerate(entries):
-        tok, note = count_tokens_with_encoder(rendered, enc, model, encoding_name)
-        tok_val = tok if tok is not None else -1
-        rows.append((tok_val, idx, rel_path, note))
+    if enc is not None and len(entries) > 1:
+        rendered_texts = [rendered for _, rendered in entries]
+        token_lists = enc.encode_batch(rendered_texts)
+        for idx, ((rel_path, _), tokens) in enumerate(zip(entries, token_lists)):
+            rows.append((len(tokens), idx, rel_path, None))
+    else:
+        for idx, (rel_path, rendered) in enumerate(entries):
+            tok, note = count_tokens_with_encoder(rendered, enc, model, encoding_name)
+            tok_val = tok if tok is not None else -1
+            rows.append((tok_val, idx, rel_path, note))
 
     rows.sort(key=lambda r: (r[0], r[1]))
 
