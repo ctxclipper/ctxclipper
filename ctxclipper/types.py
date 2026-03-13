@@ -11,6 +11,7 @@ __all__ = [
     "ChunkWithEntries",
     "Encoder",
     "FileBlock",
+    "FileReadResult",
     "TokenizerResult",
 ]
 
@@ -26,6 +27,17 @@ class FileBlock:
 
     rel_path: str
     raw: str  # unwrapped content
+
+
+@dataclass
+class FileReadResult:
+    """Result of reading and filtering file content."""
+
+    blocks: List[FileBlock]
+    skipped_binary: int
+    skipped_symlinks: int
+    skipped_errors: int
+    truncated_files: int
 
 
 @dataclass

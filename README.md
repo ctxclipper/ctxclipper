@@ -47,6 +47,12 @@ ctxclipper . --no-copy --stdout
 
 When `--no-split` is set, ctxclipper now fails with an error instead of emitting oversized output if a single rendered payload still cannot fit within the requested budget.
 
+Typical failure output looks like:
+
+```text
+[ERROR] Unable to fit output within the requested budget in no-split mode (rendered_chars=62, char_budget=40). Increase the budget, remove some preamble/question content, or enable --split.
+```
+
 ## Usage Examples
 
 Use XML output and tune budgets:
@@ -86,8 +92,8 @@ ctxclipper . --ignore-glob "*.lock" "*.min.js" --ignore node_modules dist
 | `--reserve-chars` | Characters reserved for instructions | 2000 |
 | `--split` / `--no-split` | Enable/disable chunk splitting | enabled |
 | `--interactive` / `--non-interactive` | Prompt between chunks | interactive |
-| `--trim` | Over-budget strategy in no-split mode | `largest` |
-| `--keep-per-file` | Characters to keep per file when trimming | 8000 |
+| `--trim` | How to reduce output in no-split mode before failing | `largest` |
+| `--keep-per-file` | Characters to keep per file when applying largest-file trimming | 8000 |
 | `--max-file-bytes` | Hard read cap per file | 2000000 |
 | `--ignore` | Names to ignore | common dirs |
 | `--ignore-glob` | Glob patterns to ignore | none |
@@ -99,7 +105,7 @@ ctxclipper . --ignore-glob "*.lock" "*.min.js" --ignore node_modules dist
 | `--start-chunk` | Start from this 1-based chunk index | `1` |
 | `--only-chunk` | Copy only this 1-based chunk index | none |
 | `--no-copy` | Skip clipboard | false |
-| `--stdout` | Print to stdout | false |
+| `--stdout` | Also print rendered output to stdout | false |
 
 Run `ctxclipper --help` for full options.
 

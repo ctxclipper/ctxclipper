@@ -26,7 +26,7 @@ from .tokenization import (
     safe_token_len,
     token_len,
 )
-from .types import ChunkWithEntries, Encoder, FileBlock
+from .types import ChunkWithEntries, Encoder, FileBlock, FileReadResult, TokenizerResult
 
 __all__ = ["run"]
 
@@ -37,7 +37,7 @@ def read_file_blocks(
     base_path: str,
     rel_paths: List[str],
     max_file_bytes: int,
-) -> Tuple[List[FileBlock], int, int, int, int]:
+) -> FileReadResult:
     """
     Read files and create FileBlocks.
 
@@ -47,7 +47,7 @@ def read_file_blocks(
         max_file_bytes: Maximum bytes to read per file.
 
     Returns:
-        Tuple of (blocks, skipped_binary, skipped_symlinks, skipped_errors, truncated_files).
+        FileReadResult containing included blocks and skip counters.
     """
     blocks: List[FileBlock] = []
     skipped_binary = 0
@@ -91,7 +91,13 @@ def read_file_blocks(
             logger.warning("Failed to read file %s: %s", abs_path, e)
             skipped_errors += 1
 
-    return blocks, skipped_binary, skipped_symlinks, skipped_errors, truncated_files
+    return FileReadResult(
+        blocks=blocks,
+        skipped_binary=skipped_binary,
+        skipped_symlinks=skipped_symlinks,
+        skipped_errors=skipped_errors,
+        truncated_files=truncated_files,
+    )
 
 
 def adjust_budget(base: Optional[int], overhead: int, label: str) -> Tuple[Optional[int], bool]:
@@ -172,8 +178,114 @@ def _trim_blocks_to_fit(
         largest_idx = max(range(len(working_blocks)), key=lambda idx: len(working_blocks[idx].raw))
         trimmed_block = _trim_block_once(working_blocks[largest_idx], keep_per_file)
         if trimmed_block.raw == working_blocks[largest_idx].raw:
-            raise BudgetError("Unable to fit output within the requested budget in no-split mode")
+            raise _make_budget_error(final_text, enc, max_chars_budget, max_tokens_budget)
         working_blocks[largest_idx] = trimmed_block
+
+
+def _log_tokenizer_info(
+    tokenizer_result: TokenizerResult,
+    model: Optional[str],
+    max_tokens: Optional[int],
+) -> None:
+    """Print tokenizer initialization details."""
+    enc = tokenizer_result.encoder
+    enc_name = getattr(enc, "name", "none") if enc is not None else "none"
+    model_label = model if model else "none"
+    print(
+        f"[INFO] Tokenizer: model={model_label} encoding={enc_name} source={tokenizer_result.source}",
+        file=sys.stderr,
+    )
+
+    if tokenizer_result.source == "override" and tokenizer_result.note:
+        print(f"[INFO] {tokenizer_result.note}", file=sys.stderr)
+    if tokenizer_result.source == "encoding" and model and tokenizer_result.note:
+        print(f"[WARN] {tokenizer_result.note}", file=sys.stderr)
+    if tokenizer_result.source == "none":
+        print(f"[WARN] Tokenizer unavailable: {tokenizer_result.note}", file=sys.stderr)
+        if max_tokens is not None:
+            print(
+                "[WARN] max-tokens requested but tiktoken encoder unavailable; "
+                "token budget will be ignored.",
+                file=sys.stderr,
+            )
+
+
+def _format_budget_details(
+    rendered: str,
+    enc: Encoder,
+    max_chars_budget: Optional[int],
+    max_tokens_budget: Optional[int],
+) -> str:
+    """Format rendered size details for user-facing budget errors."""
+    details = [f"rendered_chars={len(rendered)}"]
+    if max_chars_budget is not None:
+        details.append(f"char_budget={max_chars_budget}")
+
+    if max_tokens_budget is not None:
+        details.append(f"token_budget={max_tokens_budget}")
+        if enc is not None:
+            details.append(f"rendered_tokens={token_len(enc, rendered)}")
+
+    return ", ".join(details)
+
+
+def _make_budget_error(
+    rendered: str,
+    enc: Encoder,
+    max_chars_budget: Optional[int],
+    max_tokens_budget: Optional[int],
+) -> BudgetError:
+    """Create an actionable no-split budget error."""
+    details = _format_budget_details(rendered, enc, max_chars_budget, max_tokens_budget)
+    message = (
+        "Unable to fit output within the requested budget in no-split mode "
+        f"({details}). Increase the budget, remove some preamble/question content, "
+        "or enable --split."
+    )
+    return BudgetError(message)
+
+
+def _print_run_summary(
+    used_git: bool,
+    file_read_result: FileReadResult,
+    total_chars: int,
+    max_chars_budget: Optional[int],
+    max_chars: Optional[int],
+    reserve_chars: int,
+    token_count: Optional[int],
+    token_note: Optional[str],
+    chunk_info: Optional[str],
+) -> None:
+    """Print final run statistics to stderr."""
+    print(f"[INFO] Mode: {'git' if used_git else 'scan'}", file=sys.stderr)
+    print(
+        f"[INFO] Files included: {len(file_read_result.blocks)} "
+        f"| skipped binary: {file_read_result.skipped_binary} "
+        f"| skipped symlinks: {file_read_result.skipped_symlinks} "
+        f"| skipped errors: {file_read_result.skipped_errors}",
+        file=sys.stderr,
+    )
+    print(
+        f"[INFO] Truncated (max-file-bytes): {file_read_result.truncated_files}",
+        file=sys.stderr,
+    )
+    print(
+        f"[INFO] Total chars: {total_chars} "
+        f"(char_budget={max_chars_budget if max_chars_budget is not None else 'none'}, "
+        f"max={max_chars}, reserve={reserve_chars})",
+        file=sys.stderr,
+    )
+
+    if chunk_info:
+        print(chunk_info, file=sys.stderr)
+
+    if token_count is not None:
+        msg = f"[INFO] Token estimate (tiktoken): {token_count}"
+        if token_note:
+            msg += f" | note: {token_note}"
+        print(msg, file=sys.stderr)
+    else:
+        print(f"[WARN] Token estimate unavailable: {token_note}", file=sys.stderr)
 
 
 def run(args: argparse.Namespace) -> int:
@@ -217,35 +329,13 @@ def run(args: argparse.Namespace) -> int:
     rel_paths, used_git = discover_files(base_path, ignore_names, ignore_globs, include_dotfiles)
 
     # Read file contents
-    blocks, skipped_binary, skipped_symlinks, skipped_errors, truncated_files = read_file_blocks(
-        base_path, rel_paths, args.max_file_bytes
-    )
+    file_read_result = read_file_blocks(base_path, rel_paths, args.max_file_bytes)
+    blocks = file_read_result.blocks
 
     # Initialize tokenizer
     tokenizer_result = get_tokenizer(args.model, args.encoding)
     enc = tokenizer_result.encoder
-    enc_name = getattr(enc, "name", "none") if enc is not None else "none"
-    model_label = args.model if args.model else "none"
-    source_label = tokenizer_result.source
-
-    print(
-        f"[INFO] Tokenizer: model={model_label} encoding={enc_name} source={source_label}",
-        file=sys.stderr,
-    )
-
-    if tokenizer_result.source == "override" and tokenizer_result.note:
-        print(f"[INFO] {tokenizer_result.note}", file=sys.stderr)
-    if tokenizer_result.source == "encoding" and args.model:
-        if tokenizer_result.note:
-            print(f"[WARN] {tokenizer_result.note}", file=sys.stderr)
-    if tokenizer_result.source == "none":
-        print(f"[WARN] Tokenizer unavailable: {tokenizer_result.note}", file=sys.stderr)
-        if args.max_tokens is not None:
-            print(
-                "[WARN] max-tokens requested but tiktoken encoder unavailable; "
-                "token budget will be ignored.",
-                file=sys.stderr,
-            )
+    _log_tokenizer_info(tokenizer_result, args.model, args.max_tokens)
 
     # Calculate budgets
     if args.max_chars == 0:
@@ -303,31 +393,17 @@ def run(args: argparse.Namespace) -> int:
             full_rendered=full_rendered,
         )
 
-    # Print stats
-    print(f"[INFO] Mode: {'git' if used_git else 'scan'}", file=sys.stderr)
-    print(
-        f"[INFO] Files included: {len(blocks)} | skipped binary: {skipped_binary} "
-        f"| skipped symlinks: {skipped_symlinks} | skipped errors: {skipped_errors}",
-        file=sys.stderr,
+    _print_run_summary(
+        used_git=used_git,
+        file_read_result=file_read_result,
+        total_chars=total_chars,
+        max_chars_budget=max_chars_budget,
+        max_chars=args.max_chars,
+        reserve_chars=args.reserve_chars,
+        token_count=token_count,
+        token_note=token_note,
+        chunk_info=chunk_info,
     )
-    print(f"[INFO] Truncated (max-file-bytes): {truncated_files}", file=sys.stderr)
-    print(
-        f"[INFO] Total chars: {total_chars} "
-        f"(char_budget={max_chars_budget if max_chars_budget is not None else 'none'}, "
-        f"max={args.max_chars}, reserve={args.reserve_chars})",
-        file=sys.stderr,
-    )
-
-    if chunk_info:
-        print(chunk_info, file=sys.stderr)
-
-    if token_count is not None:
-        msg = f"[INFO] Token estimate (tiktoken): {token_count}"
-        if token_note:
-            msg += f" | note: {token_note}"
-        print(msg, file=sys.stderr)
-    else:
-        print(f"[WARN] Token estimate unavailable: {token_note}", file=sys.stderr)
 
     return 0
 
@@ -515,7 +591,7 @@ def _handle_single_mode(
             max_tokens=max_tokens_budget,
             enc=enc,
         ):
-            raise BudgetError("Unable to fit output within the requested budget in no-split mode")
+            raise _make_budget_error(final_text, enc, max_chars_budget, max_tokens_budget)
 
     if not args.no_copy:
         if not copy_to_clipboard(final_text):

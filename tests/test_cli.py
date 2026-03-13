@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from ctxclipper import main
-from ctxclipper.cli import parse_args
+from ctxclipper.cli import create_parser, parse_args
 from ctxclipper.constants import (
     DEFAULT_MAX_CHARS,
     DEFAULT_MAX_FILE_BYTES,
@@ -165,6 +165,23 @@ class TestParseArgs:
         """--interactive and --non-interactive should be mutually exclusive."""
         with pytest.raises(SystemExit):
             parse_args(["--interactive", "--non-interactive"])
+
+    def test_help_uses_ctxclipper_prog_name(self, capsys) -> None:
+        """Help output should use the user-facing program name."""
+        with pytest.raises(SystemExit):
+            parse_args(["--help"])
+
+        captured = capsys.readouterr()
+        assert "usage: ctxclipper" in captured.out
+
+    def test_help_uses_readable_metavars(self) -> None:
+        """Help output should not expose internal destination names."""
+        help_text = create_parser().format_help()
+
+        assert "QUESTION_PARTS" not in help_text
+        assert "--question-file PATH" in help_text
+        assert "--question-text TEXT" in help_text
+        assert "error if the output still does not fit" in help_text
 
 
 class TestMain:

@@ -10,6 +10,7 @@ import pytest
 
 from ctxclipper.core import adjust_budget, read_file_blocks, run
 from ctxclipper.exceptions import BudgetError, ClipboardError, DirectoryError
+from ctxclipper.types import FileReadResult
 
 
 class TestReadFileBlocks:
@@ -18,45 +19,42 @@ class TestReadFileBlocks:
     def test_reads_text_files(self, sample_repo: Path) -> None:
         """Should read text files and create FileBlocks."""
         rel_paths = ["README.md", "src/main.py"]
-        blocks, binary, symlinks, errors, truncated = read_file_blocks(
-            str(sample_repo), rel_paths, max_file_bytes=1_000_000
-        )
+        result = read_file_blocks(str(sample_repo), rel_paths, max_file_bytes=1_000_000)
+        blocks = result.blocks
 
         assert len(blocks) == 2
         assert blocks[0].rel_path == "README.md"
         assert "Sample Project" in blocks[0].raw
         assert blocks[1].rel_path == "src/main.py"
-        assert binary == 0
-        assert symlinks == 0
-        assert errors == 0
-        assert truncated == 0
+        assert result.skipped_binary == 0
+        assert result.skipped_symlinks == 0
+        assert result.skipped_errors == 0
+        assert result.truncated_files == 0
 
     def test_skips_binary_files(self, sample_repo_with_binary: Path) -> None:
         """Should skip binary files."""
         rel_paths = ["README.md", "image.png"]
-        blocks, binary, symlinks, errors, _truncated = read_file_blocks(
-            str(sample_repo_with_binary), rel_paths, max_file_bytes=1_000_000
-        )
+        result = read_file_blocks(str(sample_repo_with_binary), rel_paths, max_file_bytes=1_000_000)
+        blocks = result.blocks
 
         assert len(blocks) == 1
         assert blocks[0].rel_path == "README.md"
-        assert binary == 1
-        assert symlinks == 0
-        assert errors == 0
+        assert result.skipped_binary == 1
+        assert result.skipped_symlinks == 0
+        assert result.skipped_errors == 0
 
     def test_truncates_large_files(self, temp_dir: Path) -> None:
         """Should truncate files exceeding max_file_bytes."""
         large_file = temp_dir / "large.txt"
         large_file.write_text("x" * 1000)
 
-        blocks, _binary, symlinks, _errors, truncated = read_file_blocks(
-            str(temp_dir), ["large.txt"], max_file_bytes=100
-        )
+        result = read_file_blocks(str(temp_dir), ["large.txt"], max_file_bytes=100)
+        blocks = result.blocks
 
         assert len(blocks) == 1
         assert "[TRUNCATED:" in blocks[0].raw
-        assert symlinks == 0
-        assert truncated == 1
+        assert result.skipped_symlinks == 0
+        assert result.truncated_files == 1
 
     def test_handles_unreadable_files(self, temp_dir: Path) -> None:
         """Should skip unreadable files and increment error count."""
@@ -65,25 +63,23 @@ class TestReadFileBlocks:
         test_file.write_text("content")
 
         rel_paths = ["test.txt", "nonexistent.txt"]
-        blocks, _binary, symlinks, _errors, _truncated = read_file_blocks(
-            str(temp_dir), rel_paths, max_file_bytes=1_000_000
-        )
+        result = read_file_blocks(str(temp_dir), rel_paths, max_file_bytes=1_000_000)
+        blocks = result.blocks
 
         # Only the existing file should be read
         assert len(blocks) == 1
-        assert symlinks == 0
+        assert result.skipped_symlinks == 0
         # nonexistent.txt is skipped by isfile check, not counted as error
 
     def test_skips_directories(self, sample_repo: Path) -> None:
         """Should skip directories in rel_paths."""
         rel_paths = ["src", "README.md"]
-        blocks, _binary, symlinks, _errors, _truncated = read_file_blocks(
-            str(sample_repo), rel_paths, max_file_bytes=1_000_000
-        )
+        result = read_file_blocks(str(sample_repo), rel_paths, max_file_bytes=1_000_000)
+        blocks = result.blocks
 
         assert len(blocks) == 1
         assert blocks[0].rel_path == "README.md"
-        assert symlinks == 0
+        assert result.skipped_symlinks == 0
 
     def test_reads_in_tree_symlinked_file(self, temp_dir: Path) -> None:
         """Should follow symlinked files that resolve inside the base path."""
@@ -96,17 +92,16 @@ class TestReadFileBlocks:
         except (OSError, NotImplementedError) as exc:
             pytest.skip(f"symlinks unavailable: {exc}")
 
-        blocks, binary, symlinks, errors, truncated = read_file_blocks(
-            str(temp_dir), ["link.txt"], max_file_bytes=1_000_000
-        )
+        result = read_file_blocks(str(temp_dir), ["link.txt"], max_file_bytes=1_000_000)
+        blocks = result.blocks
 
         assert len(blocks) == 1
         assert blocks[0].rel_path == "link.txt"
         assert blocks[0].raw == "linked content"
-        assert binary == 0
-        assert symlinks == 0
-        assert errors == 0
-        assert truncated == 0
+        assert result.skipped_binary == 0
+        assert result.skipped_symlinks == 0
+        assert result.skipped_errors == 0
+        assert result.truncated_files == 0
 
     def test_skips_symlink_outside_base_path(self, temp_dir: Path) -> None:
         """Should skip symlinks that resolve outside the base path."""
@@ -121,27 +116,25 @@ class TestReadFileBlocks:
             except (OSError, NotImplementedError) as exc:
                 pytest.skip(f"symlinks unavailable: {exc}")
 
-            blocks, binary, symlinks, errors, truncated = read_file_blocks(
-                str(temp_dir), ["link.txt"], max_file_bytes=1_000_000
-            )
+            result = read_file_blocks(str(temp_dir), ["link.txt"], max_file_bytes=1_000_000)
 
-        assert blocks == []
-        assert binary == 0
-        assert symlinks == 1
-        assert errors == 0
-        assert truncated == 0
+        assert result.blocks == []
+        assert result.skipped_binary == 0
+        assert result.skipped_symlinks == 1
+        assert result.skipped_errors == 0
+        assert result.truncated_files == 0
 
     def test_empty_file_list(self, temp_dir: Path) -> None:
         """Should handle empty file list."""
-        blocks, binary, symlinks, errors, truncated = read_file_blocks(
-            str(temp_dir), [], max_file_bytes=1_000_000
-        )
+        result = read_file_blocks(str(temp_dir), [], max_file_bytes=1_000_000)
 
-        assert blocks == []
-        assert binary == 0
-        assert symlinks == 0
-        assert errors == 0
-        assert truncated == 0
+        assert result == FileReadResult(
+            blocks=[],
+            skipped_binary=0,
+            skipped_symlinks=0,
+            skipped_errors=0,
+            truncated_files=0,
+        )
 
 
 class TestAdjustBudget:
@@ -375,3 +368,31 @@ class TestRun:
 
         captured = capsys.readouterr()
         assert captured.out == ""
+
+    def test_no_split_budget_error_includes_sizes_and_hint(self, temp_dir: Path) -> None:
+        """Budget errors should explain the rendered size and remediation options."""
+        (temp_dir / "tiny.txt").write_text("x")
+
+        args = self._make_args(
+            path=str(temp_dir),
+            no_copy=True,
+            stdout=False,
+            split=False,
+            trim="largest",
+            keep_per_file=0,
+            max_chars=40,
+            reserve_chars=0,
+            include_dotfiles=True,
+            format="xml",
+            max_tokens=None,
+            reserve_tokens=0,
+            question_parts=[("text", "question text")],
+        )
+
+        with pytest.raises(BudgetError) as exc_info:
+            run(args)
+
+        message = str(exc_info.value)
+        assert "rendered_chars=" in message
+        assert "char_budget=40" in message
+        assert "enable --split" in message
