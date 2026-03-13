@@ -5,7 +5,7 @@ import logging
 from typing import List, Optional, Tuple, Union
 
 from .rendering import render_block, wrap_files_root
-from .tokenization import fits_budget
+from .tokenization import fits_budget, token_len
 from .types import ChunkEntry, ChunkWithEntries, Encoder, FileBlock
 
 __all__ = [
@@ -16,6 +16,13 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def _files_root_token_overhead(enc: Encoder, fmt: str) -> int:
+    """Return a safe token upper bound for the files root wrapper."""
+    if enc is None or fmt != "xml":
+        return 0
+    return token_len(enc, "<files>\n") + token_len(enc, "\n</files>\n")
 
 
 def split_big_file(
@@ -163,38 +170,69 @@ def pack_chunks(
     cur: List[str] = []
     cur_entries: List[ChunkEntry] = []
     rendered_blocks = [render_block(block, fmt) for block in blocks]
+    rendered_token_counts: Optional[List[int]] = None
+    token_overhead = _files_root_token_overhead(enc, fmt)
+    cur_estimated_tokens = 0
 
-    single_block_token_fits: Optional[List[bool]] = None
     if enc is not None and max_tokens is not None and rendered_blocks:
-        wrapped_blocks = [wrap_files_root(rendered, fmt) for rendered in rendered_blocks]
-        single_block_token_fits = [
-            len(tokens) <= max_tokens for tokens in enc.encode_batch(wrapped_blocks)
-        ]
+        rendered_token_counts = [len(tokens) for tokens in enc.encode_batch(rendered_blocks)]
 
     for idx, (b, rendered) in enumerate(zip(blocks, rendered_blocks)):
         single_block_fits = True
         if max_chars is not None and len(wrap_files_root(rendered, fmt)) > max_chars:
             single_block_fits = False
-        if single_block_token_fits is not None and not single_block_token_fits[idx]:
-            single_block_fits = False
+        if rendered_token_counts is not None:
+            token_budget = max_tokens
+            assert token_budget is not None
+            single_block_upper = token_overhead + rendered_token_counts[idx]
+            if single_block_upper > token_budget and not fits_budget(
+                wrap_files_root(rendered, fmt),
+                max_chars=None,
+                max_tokens=token_budget,
+                enc=enc,
+            ):
+                single_block_fits = False
 
         if single_block_fits:
             # File fits in a single chunk
             candidate = "".join(cur) + rendered
-            if cur and not fits_budget(
-                wrap_files_root(candidate, fmt),
-                max_chars=max_chars,
-                max_tokens=max_tokens,
-                enc=enc,
-            ):
+            candidate_fits = True
+            if cur:
+                candidate_chars_fit = max_chars is None or len(wrap_files_root(candidate, fmt)) <= max_chars
+                candidate_tokens_fit = True
+                if rendered_token_counts is not None:
+                    token_budget = max_tokens
+                    assert token_budget is not None
+                    candidate_upper = token_overhead + cur_estimated_tokens + rendered_token_counts[idx]
+                    if candidate_upper > token_budget:
+                        candidate_tokens_fit = fits_budget(
+                            wrap_files_root(candidate, fmt),
+                            max_chars=None,
+                            max_tokens=token_budget,
+                            enc=enc,
+                        )
+                else:
+                    candidate_tokens_fit = fits_budget(
+                        wrap_files_root(candidate, fmt),
+                        max_chars=None,
+                        max_tokens=max_tokens,
+                        enc=enc,
+                    )
+
+                candidate_fits = candidate_chars_fit and candidate_tokens_fit
+
+            if cur and not candidate_fits:
                 # Current chunk is full, start new one
                 chunks.append(wrap_files_root("".join(cur), fmt))
                 chunk_entries.append(cur_entries)
                 cur = []
                 cur_entries = []
+                cur_estimated_tokens = 0
 
             cur.append(rendered)
             cur_entries.append((b.rel_path, rendered))
+            if rendered_token_counts is not None:
+                cur_estimated_tokens += rendered_token_counts[idx]
         else:
             # File too big, need to split it
             if cur:
@@ -202,6 +240,7 @@ def pack_chunks(
                 chunk_entries.append(cur_entries)
                 cur = []
                 cur_entries = []
+                cur_estimated_tokens = 0
 
             pieces = split_big_file(b, fmt, max_chars=max_chars, max_tokens=max_tokens, enc=enc)
             for p in pieces:

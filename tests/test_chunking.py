@@ -1,7 +1,7 @@
 """Tests for chunking module."""
 
 from ctxclipper.chunking import pack_chunks, split_big_file, trim_largest_first
-from ctxclipper.tokenization import get_tokenizer
+from ctxclipper.tokenization import get_tokenizer, token_len
 from ctxclipper.types import FileBlock
 
 
@@ -76,6 +76,29 @@ class TestPackChunks:
         assert isinstance(entries, list)
         assert len(entries) == 1
         assert entries[0][0] == "test.py"
+
+    def test_token_budget_respected_with_encoder(self) -> None:
+        """Token-budget chunking should keep all chunks within the exact limit."""
+        result = get_tokenizer(None, None)
+        if result.encoder is None:
+            return
+
+        blocks = [
+            FileBlock(rel_path=f"f{i}.py", raw="word " * 60)
+            for i in range(6)
+        ]
+        chunks = pack_chunks(
+            blocks,
+            fmt="xml",
+            max_chars=None,
+            max_tokens=120,
+            enc=result.encoder,
+            include_entries=False,
+        )
+
+        assert len(chunks) >= 2
+        for chunk in chunks:
+            assert token_len(result.encoder, chunk) <= 120
 
 
 class TestTrimLargestFirst:
