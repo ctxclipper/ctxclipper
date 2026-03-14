@@ -107,7 +107,7 @@ def load_gitignore_pathspec(base_path: str) -> Tuple[Optional[Any], Optional[str
         except OSError as e:
             logger.warning("Failed to read .gitignore: %s", e)
 
-    spec = pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+    spec = pathspec.PathSpec.from_lines("gitignore", patterns)
     return spec, None
 
 
